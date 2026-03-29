@@ -1,68 +1,106 @@
 #!/usr/bin/env python3
-"""pratt_parser - Top-down operator precedence (Pratt) parser."""
-import argparse, re
+"""pratt_parser - Pratt parser for expression parsing with operator precedence."""
+import sys, re
 
 class Token:
-    def __init__(self, type, value): self.type,self.value=type,value
-    def __repr__(self): return f"Token({self.type},{self.value})"
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
 
-def tokenize(text):
-    tokens=[]
-    for m in re.finditer(r'\d+\.?\d*|[+\-*/^()]|[a-zA-Z_]\w*',text):
-        v=m.group()
-        if re.match(r'\d',v): tokens.append(Token('NUM',float(v)))
-        elif v in '+-*/^()': tokens.append(Token(v,v))
-        else: tokens.append(Token('ID',v))
-    tokens.append(Token('EOF',None)); return tokens
+def tokenize(expr):
+    tokens = []
+    i = 0
+    while i < len(expr):
+        if expr[i].isspace():
+            i += 1
+        elif expr[i].isdigit() or (expr[i] == '.' and i+1 < len(expr) and expr[i+1].isdigit()):
+            j = i
+            while j < len(expr) and (expr[j].isdigit() or expr[j] == '.'):
+                j += 1
+            tokens.append(Token("NUM", float(expr[i:j])))
+            i = j
+        elif expr[i] in "+-*/^%":
+            tokens.append(Token("OP", expr[i]))
+            i += 1
+        elif expr[i] == '(':
+            tokens.append(Token("LPAREN", "("))
+            i += 1
+        elif expr[i] == ')':
+            tokens.append(Token("RPAREN", ")"))
+            i += 1
+        else:
+            raise SyntaxError(f"Unknown char: {expr[i]}")
+    tokens.append(Token("EOF", None))
+    return tokens
+
+PREC = {'+': 1, '-': 1, '*': 2, '/': 2, '%': 2, '^': 3}
+RIGHT_ASSOC = {'^'}
 
 class Parser:
-    def __init__(self, tokens): self.tokens=tokens; self.pos=0
-    def peek(self): return self.tokens[self.pos]
-    def advance(self): t=self.tokens[self.pos]; self.pos+=1; return t
-    def expect(self, type):
-        t=self.advance()
-        if t.type!=type: raise SyntaxError(f"Expected {type}, got {t.type}")
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+    def peek(self):
+        return self.tokens[self.pos]
+    def advance(self):
+        t = self.tokens[self.pos]
+        self.pos += 1
         return t
-    def nud(self, token):
-        if token.type=='NUM': return ('num',token.value)
-        if token.type=='ID': return ('var',token.value)
-        if token.type=='(':
-            expr=self.expression(0); self.expect(')'); return expr
-        if token.type=='-': return ('neg',self.expression(70))
-        if token.type=='+': return self.expression(70)
-        raise SyntaxError(f"Unexpected {token}")
-    def led(self, left, token):
-        bp={'+':(50,51),'-':(50,51),'*':(60,61),'/':(60,61),'^':(80,79)}
-        _,rbp=bp.get(token.type,(0,0))
-        return ('binop',token.value,left,self.expression(rbp))
-    def lbp(self, token):
-        bp={'+':(50,51),'-':(50,51),'*':(60,61),'/':(60,61),'^':(80,79)}
-        return bp.get(token.type,(0,0))[0]
-    def expression(self, rbp=0):
-        t=self.advance(); left=self.nud(t)
-        while rbp<self.lbp(self.peek()):
-            t=self.advance(); left=self.led(left,t)
+    def parse(self, min_prec=0):
+        left = self.parse_prefix()
+        while self.peek().type == "OP" and PREC.get(self.peek().value, -1) >= min_prec:
+            op = self.advance().value
+            prec = PREC[op]
+            next_prec = prec if op in RIGHT_ASSOC else prec + 1
+            right = self.parse(next_prec)
+            left = ("binop", op, left, right)
         return left
+    def parse_prefix(self):
+        t = self.peek()
+        if t.type == "NUM":
+            self.advance()
+            return ("num", t.value)
+        if t.type == "OP" and t.value == "-":
+            self.advance()
+            operand = self.parse(3)
+            return ("neg", operand)
+        if t.type == "LPAREN":
+            self.advance()
+            expr = self.parse(0)
+            assert self.advance().type == "RPAREN"
+            return expr
+        raise SyntaxError(f"Unexpected: {t.type}")
 
 def evaluate(ast):
-    if ast[0]=='num': return ast[1]
-    if ast[0]=='var': return {'pi':3.14159265,'e':2.71828183}.get(ast[1],0)
-    if ast[0]=='neg': return -evaluate(ast[1])
-    if ast[0]=='binop':
-        l,r=evaluate(ast[2]),evaluate(ast[3])
-        return {'+':l+r,'-':l-r,'*':l*r,'/':l/r if r else float('inf'),'^':l**r}[ast[1]]
-    return 0
+    if ast[0] == "num":
+        return ast[1]
+    if ast[0] == "neg":
+        return -evaluate(ast[1])
+    if ast[0] == "binop":
+        _, op, l, r = ast
+        lv, rv = evaluate(l), evaluate(r)
+        if op == '+': return lv + rv
+        if op == '-': return lv - rv
+        if op == '*': return lv * rv
+        if op == '/': return lv / rv
+        if op == '^': return lv ** rv
+        if op == '%': return lv % rv
+    raise ValueError(f"Unknown: {ast}")
 
-def main():
-    p=argparse.ArgumentParser(description="Pratt parser")
-    p.add_argument("expr",nargs="?",default="2+3*4^2-1")
-    p.add_argument("--ast",action="store_true")
-    args=p.parse_args()
-    tokens=tokenize(args.expr)
-    parser=Parser(tokens)
-    ast=parser.expression()
-    if args.ast: print(f"AST: {ast}")
-    print(f"{args.expr} = {evaluate(ast)}")
+def calc(expr):
+    return evaluate(Parser(tokenize(expr)).parse())
 
-if __name__=="__main__":
-    main()
+def test():
+    assert calc("2 + 3 * 4") == 14
+    assert calc("(2 + 3) * 4") == 20
+    assert calc("2 ^ 3 ^ 2") == 512  # right-assoc: 2^(3^2)=2^9
+    assert calc("-5 + 3") == -2
+    assert abs(calc("10 / 3") - 10/3) < 1e-9
+    assert calc("7 % 3") == 1
+    print("OK: pratt_parser")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        test()
+    else:
+        print("Usage: pratt_parser.py test")

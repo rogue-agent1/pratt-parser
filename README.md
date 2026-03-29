@@ -1,19 +1,11 @@
-# Pratt Parser
+# pratt-parser
 
-Top-down operator precedence parser (Pratt parsing)
+Pratt parser for expression parsing with operator precedence.
 
 ## Usage
 
 ```bash
-python3 pratt_parser.py --help
+python3 pratt_parser.py test
 ```
 
-## Features
-
-- Zero dependencies (Python 3.8+ stdlib only)
-- Single file
-- CLI interface
-
-## License
-
-MIT
+Zero dependencies. Python 3.8+.
