@@ -1,8 +1,19 @@
-# pratt-parser
-Pratt parser for math expressions with AST output. Zero dependencies.
+# Pratt Parser
+
+Top-down operator precedence parser (Pratt parsing)
+
 ## Usage
+
+```bash
+python3 pratt_parser.py --help
 ```
-python3 pratt_parser.py "2 + 3 * 4"
-python3 pratt_parser.py "2 ^ 10" --ast
-python3 pratt_parser.py "(1 + 2) * (3 + 4)"
-```
+
+## Features
+
+- Zero dependencies (Python 3.8+ stdlib only)
+- Single file
+- CLI interface
+
+## License
+
+MIT

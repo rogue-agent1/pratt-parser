@@ -1,66 +1,68 @@
 #!/usr/bin/env python3
-"""pratt_parser - Pratt parser for mathematical expressions with AST."""
-import sys, re, math, json
+"""pratt_parser - Top-down operator precedence (Pratt) parser."""
+import argparse, re
 
-def tokenize(s):
-    return [t for t in re.findall(r'\d+\.?\d*|[+\-*/^()!]|\w+', s)]
+class Token:
+    def __init__(self, type, value): self.type,self.value=type,value
+    def __repr__(self): return f"Token({self.type},{self.value})"
+
+def tokenize(text):
+    tokens=[]
+    for m in re.finditer(r'\d+\.?\d*|[+\-*/^()]|[a-zA-Z_]\w*',text):
+        v=m.group()
+        if re.match(r'\d',v): tokens.append(Token('NUM',float(v)))
+        elif v in '+-*/^()': tokens.append(Token(v,v))
+        else: tokens.append(Token('ID',v))
+    tokens.append(Token('EOF',None)); return tokens
 
 class Parser:
     def __init__(self, tokens): self.tokens=tokens; self.pos=0
-    def peek(self): return self.tokens[self.pos] if self.pos<len(self.tokens) else None
-    def consume(self): t=self.peek(); self.pos+=1; return t
-    def parse(self, rbp=0):
-        t=self.consume()
-        left=self.nud(t)
-        while self.peek() and self.lbp(self.peek())>rbp:
-            t=self.consume()
-            left=self.led(t, left)
+    def peek(self): return self.tokens[self.pos]
+    def advance(self): t=self.tokens[self.pos]; self.pos+=1; return t
+    def expect(self, type):
+        t=self.advance()
+        if t.type!=type: raise SyntaxError(f"Expected {type}, got {t.type}")
+        return t
+    def nud(self, token):
+        if token.type=='NUM': return ('num',token.value)
+        if token.type=='ID': return ('var',token.value)
+        if token.type=='(':
+            expr=self.expression(0); self.expect(')'); return expr
+        if token.type=='-': return ('neg',self.expression(70))
+        if token.type=='+': return self.expression(70)
+        raise SyntaxError(f"Unexpected {token}")
+    def led(self, left, token):
+        bp={'+':(50,51),'-':(50,51),'*':(60,61),'/':(60,61),'^':(80,79)}
+        _,rbp=bp.get(token.type,(0,0))
+        return ('binop',token.value,left,self.expression(rbp))
+    def lbp(self, token):
+        bp={'+':(50,51),'-':(50,51),'*':(60,61),'/':(60,61),'^':(80,79)}
+        return bp.get(token.type,(0,0))[0]
+    def expression(self, rbp=0):
+        t=self.advance(); left=self.nud(t)
+        while rbp<self.lbp(self.peek()):
+            t=self.advance(); left=self.led(left,t)
         return left
-    def nud(self, t):
-        if t=='(': e=self.parse(); self.consume(); return e
-        if t=='-': return ('neg',self.parse(70))
-        if t.replace('.','').isdigit(): return float(t)
-        return ('var',t)
-    def led(self, t, left):
-        bp={'+':(50,50),'-':(50,50),'*':(60,60),'/':(60,60),'^':(80,79)}
-        if t in bp: return (t, left, self.parse(bp[t][1]))
-        if t=='!': return ('!', left)
-        return (t, left)
-    def lbp(self, t):
-        return {'+':50,'-':50,'*':60,'/':60,'^':80,'!':90}.get(t,0)
 
-def eval_ast(node, env=None):
-    if env is None: env={'pi':math.pi,'e':math.e}
-    if isinstance(node,(int,float)): return node
-    if isinstance(node,tuple):
-        if node[0]=='var': return env.get(node[1],0)
-        if node[0]=='neg': return -eval_ast(node[1],env)
-        if node[0]=='!': return math.factorial(int(eval_ast(node[1],env)))
-        a,b=eval_ast(node[1],env),eval_ast(node[2],env) if len(node)>2 else (0,)
-        ops={'+':lambda a,b:a+b,'-':lambda a,b:a-b,'*':lambda a,b:a*b,'/':lambda a,b:a/b,'^':lambda a,b:a**b}
-        return ops[node[0]](a,b)
-    return node
-
-def ast_str(node, depth=0):
-    indent='  '*depth
-    if isinstance(node,(int,float)): return f"{indent}{node}"
-    if isinstance(node,tuple):
-        lines=[f"{indent}{node[0]}"]
-        for child in node[1:]:
-            lines.append(ast_str(child,depth+1))
-        return '\n'.join(lines)
-    return f"{indent}{node}"
+def evaluate(ast):
+    if ast[0]=='num': return ast[1]
+    if ast[0]=='var': return {'pi':3.14159265,'e':2.71828183}.get(ast[1],0)
+    if ast[0]=='neg': return -evaluate(ast[1])
+    if ast[0]=='binop':
+        l,r=evaluate(ast[2]),evaluate(ast[3])
+        return {'+':l+r,'-':l-r,'*':l*r,'/':l/r if r else float('inf'),'^':l**r}[ast[1]]
+    return 0
 
 def main():
-    args=sys.argv[1:]
-    if not args or '-h' in args:
-        print("Usage: pratt_parser.py EXPR [--ast]"); return
-    expr=' '.join(a for a in args if a!='--ast')
-    tokens=tokenize(expr)
-    ast=Parser(tokens).parse()
-    if '--ast' in args:
-        print(ast_str(ast))
-    result=eval_ast(ast)
-    print(f"  {expr} = {result}")
+    p=argparse.ArgumentParser(description="Pratt parser")
+    p.add_argument("expr",nargs="?",default="2+3*4^2-1")
+    p.add_argument("--ast",action="store_true")
+    args=p.parse_args()
+    tokens=tokenize(args.expr)
+    parser=Parser(tokens)
+    ast=parser.expression()
+    if args.ast: print(f"AST: {ast}")
+    print(f"{args.expr} = {evaluate(ast)}")
 
-if __name__=='__main__': main()
+if __name__=="__main__":
+    main()
