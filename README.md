@@ -1,11 +1,9 @@
 # pratt-parser
 
-Pratt parser for expression parsing with operator precedence.
+Pratt parser for mathematical expressions. Zero dependencies, single file, Python 3.8+.
 
 ## Usage
 
 ```bash
-python3 pratt_parser.py test
+python3 pratt_parser.py --help
 ```
-
-Zero dependencies. Python 3.8+.
